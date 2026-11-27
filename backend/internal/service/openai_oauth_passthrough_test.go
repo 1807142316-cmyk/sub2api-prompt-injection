@@ -3,6 +3,7 @@ package service
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -2590,6 +2591,270 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesBodyAndUsesResponsesEnd
 	require.Equal(t, "window-passthrough", upstream.lastReq.Header.Get("X-Codex-Window-ID"))
 	require.Equal(t, "installation-passthrough", upstream.lastReq.Header.Get("X-Codex-Installation-ID"))
 	require.Empty(t, upstream.lastReq.Header.Get("X-Test"))
+}
+
+func TestOpenAIGatewayService_APIKeyPassthrough_PreservesCompleteResponsesRequest(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name            string
+		stream          bool
+		store           bool
+		parallel        bool
+		emptyValues     bool
+		headerOverrides bool
+	}{
+		{name: "non_stream_false_values"},
+		{name: "stream_true_values", stream: true, store: true, parallel: true},
+		{name: "non_stream_empty_values", emptyValues: true},
+		{name: "stream_header_overrides", stream: true, headerOverrides: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body := map[string]any{
+				"model": "gpt-5.2",
+				"input": []any{map[string]any{
+					"role":    "user",
+					"content": []any{map[string]any{"type": "input_text", "text": "Echo the fixture."}},
+				}},
+				"instructions": "Use the supplied echo tool.",
+				"tools": []any{map[string]any{
+					"type": "function", "name": "echo_fixture", "description": "Echo a supplied value.",
+					"parameters": map[string]any{
+						"type": "object", "properties": map[string]any{"value": map[string]any{"type": "string"}},
+						"required": []string{"value"}, "additionalProperties": false,
+					},
+					"strict": true,
+				}},
+				"tool_choice":          map[string]any{"type": "function", "name": "echo_fixture"},
+				"parallel_tool_calls":  tt.parallel,
+				"reasoning":            map[string]any{"effort": "low", "summary": "auto"},
+				"text":                 map[string]any{"format": map[string]any{"type": "text"}, "verbosity": "low"},
+				"include":              []string{"reasoning.encrypted_content"},
+				"store":                tt.store,
+				"stream":               tt.stream,
+				"previous_response_id": "resp_mock_previous",
+				"metadata":             map[string]string{"source": "fixture", "empty": ""},
+				"prompt_cache_key":     "fixture-cache-key",
+				"service_tier":         "flex",
+				"max_output_tokens":    128,
+			}
+			if tt.emptyValues {
+				body["instructions"] = ""
+				body["include"] = []string{}
+				body["metadata"] = map[string]string{}
+				body["prompt_cache_key"] = ""
+				body["previous_response_id"] = nil
+			}
+			originalBody, err := json.Marshal(body)
+			require.NoError(t, err)
+
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", bytes.NewReader(originalBody))
+			allowedHeaders := http.Header{
+				"Accept":                  {"application/json"},
+				"Accept-Language":         {"en-US", "zh-CN"},
+				"Content-Type":            {"application/json"},
+				"User-Agent":              {"fixture-client/1.0"},
+				"OpenAI-Beta":             {"responses=experimental"},
+				"Originator":              {"codex_cli_rs"},
+				"Session_ID":              {"session-fixture"},
+				"Conversation_ID":         {"conversation-fixture"},
+				"X-Codex-Beta-Features":   {"remote_compaction_v2"},
+				"X-Codex-Installation-ID": {"installation-fixture"},
+				"X-Codex-Window-ID":       {"window-fixture"},
+				"X-Codex-Turn-State":      {"turn-state-fixture"},
+				"X-Codex-Turn-Metadata":   {`{"turn_id":"turn-fixture"}`},
+			}
+			if tt.stream {
+				allowedHeaders.Set("Accept", "text/event-stream")
+			}
+			if tt.emptyValues {
+				allowedHeaders["X-Codex-Turn-Metadata"] = []string{""}
+			}
+			for key, values := range allowedHeaders {
+				for _, value := range values {
+					c.Request.Header.Add(key, value)
+				}
+			}
+			filteredHeaders := []string{
+				"Cookie", "Connection", "Keep-Alive", "Proxy-Authorization", "Transfer-Encoding",
+				"OpenAI-Organization", "OpenAI-Project", "Idempotency-Key", "X-Client-Request-ID",
+				"X-Test", "X-API-Key", "X-Goog-API-Key",
+			}
+			for _, key := range filteredHeaders {
+				c.Request.Header.Set(key, "downstream-fixture")
+			}
+			c.Request.Header.Set("Authorization", "Bearer downstream-fixture")
+			c.Request.Header.Set("Version", "incoming-version")
+
+			responseJSON := `{"id":"resp_mock_complete","status":"completed","model":"gpt-5.2","output":[{"type":"function_call","id":"fc_fixture","call_id":"call_fixture","name":"echo_fixture","arguments":"{\"value\":\"fixture\"}"}],"usage":{"input_tokens":11,"output_tokens":7,"input_tokens_details":{"cached_tokens":3}}}`
+			functionCallEvent := `{"type":"response.output_item.added","output_index":0,"item":{"type":"function_call","id":"fc_fixture","call_id":"call_fixture","name":"echo_fixture","arguments":""}}`
+			functionArgsEvent := `{"type":"response.function_call_arguments.delta","item_id":"fc_fixture","output_index":0,"delta":"{\"value\":\"fixture\"}"}`
+			responseBody := responseJSON
+			responseContentType := "application/json"
+			if tt.stream {
+				responseContentType = "text/event-stream"
+				responseBody = "data: " + functionCallEvent + "\n\ndata: " + functionArgsEvent +
+					"\n\ndata: {\"type\":\"response.completed\",\"response\":" + responseJSON + "}\n\ndata: [DONE]\n\n"
+			}
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{responseContentType}, "X-Request-Id": []string{"rid-fixture"}},
+				Body:       io.NopCloser(strings.NewReader(responseBody)),
+			}}
+			svc := &OpenAIGatewayService{
+				cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream: upstream,
+			}
+			account := &Account{
+				ID: 456, Name: "apikey-fixture", Platform: PlatformOpenAI, Type: AccountTypeAPIKey,
+				Concurrency: 1, Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1),
+				Credentials: map[string]any{
+					"api_key": "upstream-fixture", "base_url": "https://api.openai.com/v1",
+					"model_mapping":           map[string]any{"gpt-5.2": "must-not-map"},
+					"header_override_enabled": tt.headerOverrides,
+					"header_overrides": map[string]any{
+						"User-Agent": "fixture-account/2.0",
+						"Version":    "configured-version",
+					},
+				},
+				Extra: map[string]any{"openai_passthrough": true, "openai_responses_mode": "force_responses"},
+			}
+
+			result, err := svc.Forward(context.Background(), c, account, originalBody)
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.requests, 1)
+			require.Equal(t, "https://api.openai.com/v1/responses", upstream.lastReq.URL.String())
+			require.Equal(t, originalBody, upstream.lastBody)
+			for _, path := range []string{
+				"model", "input", "instructions", "tools", "tool_choice", "parallel_tool_calls", "reasoning",
+				"text", "include", "store", "stream", "previous_response_id", "metadata", "prompt_cache_key",
+				"service_tier", "max_output_tokens",
+			} {
+				expected := gjson.GetBytes(originalBody, path)
+				actual := gjson.GetBytes(upstream.lastBody, path)
+				require.True(t, actual.Exists(), "missing field %s", path)
+				require.Equal(t, expected.Type, actual.Type, "field %s", path)
+				require.Equal(t, expected.Raw, actual.Raw, "field %s", path)
+			}
+			// Overrides use wire casing; normalize for comparison without hiding duplicate values.
+			upstreamHeaders := make(http.Header)
+			for key, values := range upstream.lastReq.Header {
+				for _, value := range values {
+					upstreamHeaders.Add(key, value)
+				}
+			}
+			if tt.headerOverrides {
+				allowedHeaders.Set("User-Agent", "fixture-account/2.0")
+				require.Equal(t, []string{"configured-version"}, upstreamHeaders.Values("Version"))
+			} else {
+				require.Empty(t, upstreamHeaders.Values("Version"))
+			}
+			for key, values := range allowedHeaders {
+				require.Equal(t, values, upstreamHeaders.Values(key), "header %s", key)
+			}
+			for _, key := range filteredHeaders {
+				require.Empty(t, upstreamHeaders.Values(key), "unexpected header %s", key)
+			}
+			require.Equal(t, []string{"Bearer upstream-fixture"}, upstreamHeaders.Values("Authorization"))
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, tt.stream, result.Stream)
+			require.Equal(t, 11, result.Usage.InputTokens)
+			require.Equal(t, 7, result.Usage.OutputTokens)
+			require.Equal(t, 3, result.Usage.CacheReadInputTokens)
+			require.NotNil(t, result.ServiceTier)
+			require.Equal(t, "flex", *result.ServiceTier)
+			if tt.stream {
+				require.Contains(t, rec.Header().Get("Content-Type"), "text/event-stream")
+				require.Contains(t, rec.Body.String(), "data: "+functionCallEvent+"\n\n")
+				require.Contains(t, rec.Body.String(), "data: "+functionArgsEvent+"\n\n")
+				require.Contains(t, rec.Body.String(), `data: {"type":"response.completed","response":`+responseJSON+"}\n\n")
+			} else {
+				require.JSONEq(t, responseJSON, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestOpenAIGatewayService_APIKeyPassthrough_LimitsCompatibilityChanges(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name    string
+		body    string
+		want    string
+		deleted []string
+	}{
+		{
+			name:    "parallel_without_tools",
+			body:    `{"model":"gpt-5.2","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"instructions":"","stream":false,"store":false,"tools":[],"parallel_tool_calls":false,"metadata":{},"prompt_cache_key":""}`,
+			want:    `{"model":"gpt-5.2","input":[{"role":"user","content":[{"type":"input_text","text":"hi"}]}],"instructions":"","stream":false,"store":false,"tools":[],"metadata":{},"prompt_cache_key":""}`,
+			deleted: []string{"parallel_tool_calls"},
+		},
+		{
+			name: "store_false_reasoning_replay",
+			body: `{"model":"gpt-5.2","store":false,"stream":false,"instructions":"Continue.","metadata":{"source":"fixture"},"input":[` +
+				`{"type":"reasoning","id":"rs_encrypted","call_id":"remove","encrypted_content":"cipher","summary":null,"opaque":9007199254740993},` +
+				`{"type":"reasoning","id":"rs_server_only","summary":[{"type":"summary_text","text":"drop"}]},` +
+				`{"type":"item_reference","id":"rs_server_only"},` +
+				`{"type":"item_reference","id":"msg_keep"},` +
+				`{"type":"message","id":"msg_keep","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`,
+			want: `{"model":"gpt-5.2","store":false,"stream":false,"instructions":"Continue.","metadata":{"source":"fixture"},"input":[` +
+				`{"type":"reasoning","encrypted_content":"cipher","summary":[],"opaque":9007199254740993},` +
+				`{"type":"item_reference","id":"msg_keep"},` +
+				`{"type":"message","id":"msg_keep","role":"user","content":[{"type":"input_text","text":"continue"}]}]}`,
+			deleted: []string{"input.0.id", "input.0.call_id"},
+		},
+		{
+			name: "output_schema_compatibility",
+			body: `{"model":"gpt-5.2","input":"hi","stream":false,"store":true,"instructions":"","metadata":{},` +
+				`"text":{"format":{"type":"json_schema","name":"fixture","strict":false,"schema":{"properties":{"tags":{"items":{"type":"string"},"uniqueItems":true}},"minProperties":1,"maxProperties":4}}}}`,
+			want: `{"model":"gpt-5.2","input":"hi","stream":false,"store":true,"instructions":"","metadata":{},` +
+				`"text":{"format":{"type":"json_schema","name":"fixture","strict":false,"schema":{"type":"object","properties":{"tags":{"type":"array","items":{"type":"string"}}},"maxProperties":4}}}}`,
+			deleted: []string{"text.format.schema.minProperties", "text.format.schema.properties.tags.uniqueItems"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/responses", strings.NewReader(tt.body))
+			upstream := &httpUpstreamRecorder{resp: &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/json"}},
+				Body:       io.NopCloser(strings.NewReader(`{"id":"resp_fixture","status":"completed","output":[],"usage":{"input_tokens":1,"output_tokens":1}}`)),
+			}}
+			svc := &OpenAIGatewayService{
+				cfg:          &config.Config{Gateway: config.GatewayConfig{ForceCodexCLI: false}},
+				httpUpstream: upstream,
+			}
+			account := &Account{
+				ID: 456, Platform: PlatformOpenAI, Type: AccountTypeAPIKey, Concurrency: 1,
+				Status: StatusActive, Schedulable: true, RateMultiplier: f64p(1),
+				Credentials: map[string]any{"api_key": "upstream-fixture", "base_url": "https://api.openai.com"},
+				Extra:       map[string]any{"openai_passthrough": true, "openai_responses_mode": "force_responses"},
+			}
+
+			result, err := svc.Forward(context.Background(), c, account, []byte(tt.body))
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Len(t, upstream.requests, 1)
+			require.JSONEq(t, tt.want, string(upstream.lastBody))
+			for _, path := range tt.deleted {
+				require.False(t, gjson.GetBytes(upstream.lastBody, path).Exists(), "unexpected field %s", path)
+			}
+			if opaque := gjson.Get(tt.want, "input.0.opaque"); opaque.Exists() {
+				require.Equal(t, opaque.Raw, gjson.GetBytes(upstream.lastBody, "input.0.opaque").Raw)
+			}
+			require.Equal(t, http.StatusOK, rec.Code)
+			require.Equal(t, 1, result.Usage.InputTokens)
+			require.Equal(t, 1, result.Usage.OutputTokens)
+		})
+	}
 }
 
 func TestOpenAIGatewayService_OAuthPassthrough_WarnOnTimeoutHeadersForStream(t *testing.T) {
