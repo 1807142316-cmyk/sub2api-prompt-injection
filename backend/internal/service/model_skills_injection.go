@@ -106,7 +106,7 @@ func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Gro
 	prefix, suffix := resolveInstructionLayerText(ctx, layers, requestedModel)
 	hasLayers := prefix != "" || suffix != ""
 
-	globalRules, err := s.GetGlobalModelSkillRules(ctx)
+	globalRules, err := s.getGlobalModelSkillRulesCached(ctx)
 	if err != nil {
 		return body, fmt.Errorf("load global model skill rules: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Gro
 
 	byID := make(map[string]ModelSkill)
 	if len(skillIDs) > 0 {
-		skills, loadErr := s.GetModelSkills(ctx)
+		skills, loadErr := s.getModelSkillsCached(ctx)
 		if loadErr != nil {
 			return body, fmt.Errorf("load model skills: %w", loadErr)
 		}
