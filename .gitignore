@@ -166,3 +166,18 @@ issues/
 .vite/
 # 本地闭源插件开发目录及构建产物不进入 Sub2API 仓库
 /plugins/
+
+# Local prompt editing and source preparation
+!docs/prompt-injection.md
+/_work/
+/source-audit/
+/frontend/vite.config.d.ts
+/backend/Dockerfile.layered
+/backend/Dockerfile.prompt-ux
+/backend-source.tar.gz
+/source-bundle.json
+/frontend-evidence.json
+/instruction-layers.export.json
+/.secrets/
+/.env.*
+!/.env.example

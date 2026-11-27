@@ -100,6 +100,9 @@ func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Gro
 	if err != nil {
 		return body, fmt.Errorf("load instruction layers: %w", err)
 	}
+	if instructionLayerGroupDisabled(ctx, layers) {
+		return body, nil
+	}
 	prefix, suffix := resolveInstructionLayerText(ctx, layers, requestedModel)
 	hasLayers := prefix != "" || suffix != ""
 

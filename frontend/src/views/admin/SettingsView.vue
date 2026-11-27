@@ -6856,9 +6856,13 @@
             </div>
           </div>
 
-          <KeepAlive>
-            <InstructionLayersPanel v-if="activeTab === 'general'" />
-          </KeepAlive>
+          <div v-if="activeTab === 'general'" class="flex flex-wrap items-center justify-between gap-3 border-y border-gray-200 py-5 dark:border-dark-700">
+            <h3 class="text-base font-semibold text-gray-900 dark:text-white">{{ t('nav.promptInjection') }}</h3>
+            <RouterLink to="/admin/prompt-injection" class="btn btn-secondary">
+              {{ t('nav.managePromptInjection') }}
+              <Icon name="arrowRight" size="sm" class="ml-2" />
+            </RouterLink>
+          </div>
 
           <BaseDialog :show="modelSkillModalOpen" :title="modelSkillEditing ? t('admin.settings.modelSkills.editTitle') : t('admin.settings.modelSkills.createTitle')" width="wide" @close="closeModelSkillModal">
             <div class="space-y-4">
@@ -9184,7 +9188,6 @@ import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import ErrorPassthroughRulesModal from "@/components/admin/ErrorPassthroughRulesModal.vue";
 import GroupSkillsFields from "@/components/admin/group/GroupSkillsFields.vue";
-import InstructionLayersPanel from "@/components/admin/settings/InstructionLayersPanel.vue";
 import type { GroupSkillsForm } from "@/components/admin/group/GroupSkillsFields.vue";
 import Icon from "@/components/icons/Icon.vue";
 import Select, { type SelectOption } from "@/components/common/Select.vue";

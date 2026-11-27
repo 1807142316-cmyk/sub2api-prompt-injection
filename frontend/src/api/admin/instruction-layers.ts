@@ -8,12 +8,13 @@ export interface InstructionLayerProfile {
   model_suffixes: Record<string, string>
 }
 
-/** Numeric user/API-Key database IDs are object keys, never secret API-Key values. */
+/** Numeric database IDs are object keys, never secret API-Key values. */
 export interface InstructionLayersConfig {
   enabled: boolean
   default: InstructionLayerProfile
   users: Record<string, InstructionLayerProfile>
   api_keys: Record<string, InstructionLayerProfile>
+  groups?: Record<string, InstructionLayerProfile>
 }
 
 export async function getInstructionLayers(): Promise<InstructionLayersConfig> {

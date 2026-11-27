@@ -609,6 +609,17 @@ const routes: RouteRecordRaw[] = [
     }
   },
   {
+    path: '/admin/prompt-injection',
+    name: 'AdminPromptInjection',
+    component: () => import('@/views/admin/PromptInjectionView.vue'),
+    meta: {
+      requiresAuth: true,
+      requiresAdmin: true,
+      title: 'Prompt Injection',
+      titleKey: 'nav.promptInjection'
+    }
+  },
+  {
     path: '/admin/settings',
     name: 'AdminSettings',
     component: () => import('@/views/admin/SettingsView.vue'),

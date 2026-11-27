@@ -18,6 +18,8 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 </div>
 
+[本地提示词注入功能说明](docs/prompt-injection.md) · [上游来源](UPSTREAM_SOURCE.md)
+
 ## ⚠️ Important Notice
 
 Please read the following carefully before using this project:

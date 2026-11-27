@@ -191,6 +191,8 @@ export default {
     promoCodes: 'Promo Codes',
     settings: 'Settings',
     myAccount: 'My Account',
+    promptInjection: 'Prompt Injection',
+    managePromptInjection: 'Manage Prompts',
     lightMode: 'Light Mode',
     darkMode: 'Dark Mode',
     collapse: 'Collapse',

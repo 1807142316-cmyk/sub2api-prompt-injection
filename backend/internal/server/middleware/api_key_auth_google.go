@@ -138,6 +138,9 @@ func APIKeyAuthWithSubscriptionGoogle(apiKeyService *service.APIKeyService, subs
 
 		ctx := context.WithValue(c.Request.Context(), ctxkey.UserID, apiKey.User.ID)
 		ctx = context.WithValue(ctx, ctxkey.APIKeyID, apiKey.ID)
+		if apiKey.GroupID != nil && *apiKey.GroupID > 0 {
+			ctx = context.WithValue(ctx, ctxkey.AuthenticatedGroupID, *apiKey.GroupID)
+		}
 		c.Request = c.Request.WithContext(ctx)
 
 		// 简易模式：跳过余额和订阅检查

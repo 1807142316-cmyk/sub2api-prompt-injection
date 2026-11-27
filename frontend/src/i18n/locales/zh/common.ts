@@ -190,6 +190,8 @@ export default {
     ops: '运维监控',
     promoCodes: '优惠码',
     settings: '系统设置',
+    promptInjection: '提示词注入',
+    managePromptInjection: '管理提示词',
     myAccount: '我的账户',
     lightMode: '浅色模式',
     darkMode: '深色模式',

@@ -66,6 +66,10 @@ const (
 	// APIKeyID is the authenticated client-key database ID, not an upstream account or key secret.
 	APIKeyID Key = "ctx_api_key_id"
 
+	// AuthenticatedGroupID is the original authenticated API Key group binding.
+	// It remains stable when later routing replaces the active Group context.
+	AuthenticatedGroupID Key = "ctx_authenticated_group_id"
+
 	// IsMaxTokensOneHaikuRequest 标识当前请求是否为 max_tokens=1 + haiku 模型的探测请求
 	// 用于 ClaudeCodeOnly 验证绕过（绕过 system prompt 检查，但仍需验证 User-Agent）
 	IsMaxTokensOneHaikuRequest Key = "ctx_is_max_tokens_one_haiku"
