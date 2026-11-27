@@ -6856,6 +6856,10 @@
             </div>
           </div>
 
+          <KeepAlive>
+            <InstructionLayersPanel v-if="activeTab === 'general'" />
+          </KeepAlive>
+
           <BaseDialog :show="modelSkillModalOpen" :title="modelSkillEditing ? t('admin.settings.modelSkills.editTitle') : t('admin.settings.modelSkills.createTitle')" width="wide" @close="closeModelSkillModal">
             <div class="space-y-4">
               <div>
@@ -9180,6 +9184,7 @@ import type { ProviderInstance } from "@/types/payment";
 import AppLayout from "@/components/layout/AppLayout.vue";
 import ErrorPassthroughRulesModal from "@/components/admin/ErrorPassthroughRulesModal.vue";
 import GroupSkillsFields from "@/components/admin/group/GroupSkillsFields.vue";
+import InstructionLayersPanel from "@/components/admin/settings/InstructionLayersPanel.vue";
 import type { GroupSkillsForm } from "@/components/admin/group/GroupSkillsFields.vue";
 import Icon from "@/components/icons/Icon.vue";
 import Select, { type SelectOption } from "@/components/common/Select.vue";

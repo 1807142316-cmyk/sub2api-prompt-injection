@@ -90,9 +90,18 @@ func appendUniqueModelSkillIDs(target []string, ids ...string) []string {
 // protocol 支持 anthropic、chat_completions、responses 和 gemini 四种入口格式。
 func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Group, protocol, requestedModel string, body []byte) ([]byte, error) {
 	if s == nil || IsChannelMonitorProbe(ctx) || len(body) == 0 ||
-		bytes.Contains(body, []byte(modelSkillsInjectionMarker)) || bytes.Contains(body, []byte(modelSkillsInjectionJSONMarker)) {
+		bytes.Contains(body, []byte(modelSkillsInjectionMarker)) || bytes.Contains(body, []byte(modelSkillsInjectionJSONMarker)) ||
+		bytes.Contains(body, []byte(instructionLayersPrefixMarker)) || bytes.Contains(body, []byte(instructionLayersPrefixJSONMarker)) ||
+		bytes.Contains(body, []byte(instructionLayersSuffixMarker)) || bytes.Contains(body, []byte(instructionLayersSuffixJSONMarker)) {
 		return body, nil
 	}
+
+	layers, err := s.GetInstructionLayers(ctx)
+	if err != nil {
+		return body, fmt.Errorf("load instruction layers: %w", err)
+	}
+	prefix, suffix := resolveInstructionLayerText(ctx, layers, requestedModel)
+	hasLayers := prefix != "" || suffix != ""
 
 	globalRules, err := s.GetGlobalModelSkillRules(ctx)
 	if err != nil {
@@ -103,23 +112,41 @@ func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Gro
 	if group != nil {
 		skillIDs = appendUniqueModelSkillIDs(skillIDs, resolveModelSkillIDs(group.DefaultSkillIDs, group.ModelSkillIDs, requestedModel)...)
 	}
-	if len(skillIDs) == 0 {
+	if len(skillIDs) == 0 && !hasLayers {
 		return body, nil
 	}
 
-	skills, err := s.GetModelSkills(ctx)
-	if err != nil {
-		return body, fmt.Errorf("load model skills: %w", err)
+	byID := make(map[string]ModelSkill)
+	if len(skillIDs) > 0 {
+		skills, loadErr := s.GetModelSkills(ctx)
+		if loadErr != nil {
+			return body, fmt.Errorf("load model skills: %w", loadErr)
+		}
+		for _, skill := range skills {
+			byID[skill.ID] = skill
+		}
 	}
-	byID := make(map[string]ModelSkill, len(skills))
-	for _, skill := range skills {
-		byID[skill.ID] = skill
+
+	var root map[string]any
+	if err := json.Unmarshal(body, &root); err != nil {
+		return body, fmt.Errorf("parse request for default skills: %w", err)
 	}
+	if root == nil {
+		if hasLayers {
+			return body, fmt.Errorf("request for instruction layers must be a JSON object")
+		}
+		return body, nil
+	}
+	taskText := selectSkillTaskText(root, protocol)
 
 	var prompt strings.Builder
 	for _, id := range skillIDs {
 		skill, ok := byID[strings.TrimSpace(id)]
 		if !ok || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		rendered, selected := routeModelSkillContent(skill.Content, taskText)
+		if !selected || strings.TrimSpace(rendered) == "" {
 			continue
 		}
 		if prompt.Len() == 0 {
@@ -129,32 +156,35 @@ func (s *SettingService) ApplyGroupDefaultSkills(ctx context.Context, group *Gro
 		prompt.WriteString("## ")
 		prompt.WriteString(strings.TrimSpace(skill.Name))
 		prompt.WriteString("\n")
-		prompt.WriteString(strings.TrimSpace(skill.Content))
+		prompt.WriteString(strings.TrimSpace(rendered))
 		prompt.WriteString("\n\n")
 	}
-	if prompt.Len() == 0 {
+	if prompt.Len() == 0 && !hasLayers {
 		return body, nil
 	}
 
-	var root map[string]any
-	if err := json.Unmarshal(body, &root); err != nil {
-		return body, fmt.Errorf("parse request for default skills: %w", err)
-	}
-	if root == nil {
-		return body, nil
-	}
 	instruction := strings.TrimSpace(prompt.String())
-	switch strings.ToLower(strings.TrimSpace(protocol)) {
-	case "anthropic":
-		applyAnthropicSkillInstruction(root, instruction)
-	case "chat_completions", "chat-completions", "chat":
-		applyChatCompletionsSkillInstruction(root, instruction)
-	case "gemini":
-		applyGeminiSkillInstruction(root, instruction)
-	case "responses", "openai":
-		applyResponsesSkillInstruction(root, instruction)
-	default:
-		return body, nil
+	if hasLayers {
+		changed, applyErr := applyInstructionLayers(root, protocol, prefix, suffix, instruction)
+		if applyErr != nil {
+			return body, fmt.Errorf("apply instruction layers: %w", applyErr)
+		}
+		if !changed {
+			return body, nil
+		}
+	} else {
+		switch strings.ToLower(strings.TrimSpace(protocol)) {
+		case "anthropic":
+			applyAnthropicSkillInstruction(root, instruction)
+		case "chat_completions", "chat-completions", "chat":
+			applyChatCompletionsSkillInstruction(root, instruction)
+		case "gemini":
+			applyGeminiSkillInstruction(root, instruction)
+		case "responses", "openai":
+			applyResponsesSkillInstruction(root, instruction)
+		default:
+			return body, nil
+		}
 	}
 
 	updated, err := json.Marshal(root)

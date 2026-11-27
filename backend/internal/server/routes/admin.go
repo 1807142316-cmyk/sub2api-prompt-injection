@@ -587,6 +587,8 @@ func registerSettingsRoutes(admin *gin.RouterGroup, h *handler.Handlers, stepUpA
 		adminSettings.DELETE("/model-skills/:id", h.Admin.Setting.DeleteModelSkill)
 		adminSettings.GET("/global-model-skills", h.Admin.Setting.GetGlobalModelSkillRules)
 		adminSettings.PUT("/global-model-skills", h.Admin.Setting.UpdateGlobalModelSkillRules)
+		adminSettings.GET("/instruction-layers", h.Admin.Setting.GetInstructionLayers)
+		adminSettings.PUT("/instruction-layers", h.Admin.Setting.UpdateInstructionLayers)
 		adminSettings.POST("/test-smtp", h.Admin.Setting.TestSMTPConnection)
 		adminSettings.POST("/send-test-email", h.Admin.Setting.SendTestEmail)
 		adminSettings.GET("/email-templates", h.Admin.Setting.ListEmailTemplates)
