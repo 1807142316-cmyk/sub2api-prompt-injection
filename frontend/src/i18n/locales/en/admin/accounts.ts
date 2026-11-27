@@ -959,6 +959,22 @@ export default {
       interceptWarmupRequests: 'Intercept Warmup Requests',
       interceptWarmupRequestsDesc:
         'When enabled, warmup requests like title generation will return mock responses without consuming upstream tokens',
+      codexRequestCompat: {
+        title: 'Codex Request Compatibility',
+        hint: 'Set the client identifier sent upstream for this account.',
+        userAgent: 'Client identifier (User-Agent)',
+        effectiveUserAgent: 'Effective User-Agent',
+        relatedSettings: 'Related request settings',
+        passthrough: 'Preserve the original request (passthrough)',
+        userAgentRequired: 'Enter a client identifier to enable compatibility.',
+        userAgentInvalid: 'The client identifier cannot contain line breaks or control characters and must be at most 8192 bytes.',
+        userAgentLiteralRequired: 'Enter a literal client identifier without header variables.',
+        source: {
+          compat: 'Uses the client identifier above.',
+          override: 'User-Agent in Header Override takes priority. Its value is shown below.',
+          original: 'Keeps the original request settings.'
+        }
+      },
       headerOverride: {
         title: 'Header Override',
         hint: 'Override same-named request headers on forwarding (case-insensitive)',

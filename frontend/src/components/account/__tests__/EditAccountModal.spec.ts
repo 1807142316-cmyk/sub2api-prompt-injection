@@ -338,6 +338,144 @@ describe('EditAccountModal', () => {
 
   afterEach(() => vi.useRealTimers())
 
+  it('preserves a legacy UA and installation id when saving untouched compatibility settings', async () => {
+    const account = buildAccount()
+    account.credentials.header_override_enabled = true
+    account.credentials.header_overrides = {
+      'user-agent': 'ProviderAgent/1',
+      'x-codex-installation-id': 'existing-installation'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const credentials = updateAccountMock.mock.calls[0]?.[1].credentials
+    expect(credentials.header_overrides).toEqual(account.credentials.header_overrides)
+    expect(credentials).not.toHaveProperty('codex_request_compat_enabled')
+    expect(credentials).not.toHaveProperty('codex_request_compat_user_agent')
+    wrapper.unmount()
+  })
+
+  it('enables compatibility with the existing custom UA and preserves independent settings', async () => {
+    const account = buildAccount()
+    account.credentials.header_override_enabled = true
+    account.credentials.header_overrides = {
+      'user-agent': 'ProviderAgent/1',
+      'x-codex-installation-id': 'existing-installation'
+    }
+    account.extra = { openai_passthrough: true, openai_responses_mode: 'force_responses' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    expect(wrapper.get<HTMLTextAreaElement>('[data-testid="codex-request-compat-user-agent"]').element.value)
+      .toBe('ProviderAgent/1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const payload = updateAccountMock.mock.calls[0]?.[1]
+    expect(payload.credentials).toMatchObject({
+      codex_request_compat_enabled: true,
+      codex_request_compat_user_agent: 'ProviderAgent/1',
+      header_override_enabled: true,
+      header_overrides: account.credentials.header_overrides
+    })
+    expect(payload.extra).toMatchObject(account.extra)
+    expect(Object.keys(payload.credentials).filter((key) => /session|turn|window|installation/.test(key))).toEqual([])
+    wrapper.unmount()
+  })
+
+  it('retains the saved compatibility UA across disable, save and reopen', async () => {
+    const account = buildAccount()
+    account.credentials.codex_request_compat_enabled = true
+    account.credentials.codex_request_compat_user_agent = 'SavedCodex/1'
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const credentials = updateAccountMock.mock.calls[0]?.[1].credentials
+    expect(credentials).toMatchObject({
+      codex_request_compat_enabled: false,
+      codex_request_compat_user_agent: 'SavedCodex/1'
+    })
+    wrapper.unmount()
+    const reopened = mountModal({ ...account, credentials })
+    expect(reopened.get('[data-testid="codex-request-compat-toggle"]').attributes('aria-checked')).toBe('false')
+    await reopened.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    expect(reopened.get<HTMLTextAreaElement>('[data-testid="codex-request-compat-user-agent"]').element.value)
+      .toBe('SavedCodex/1')
+    reopened.unmount()
+  })
+
+  it('preserves an inactive OpenAI header map when enabling compatibility', async () => {
+    const account = buildAccount()
+    account.credentials.header_override_enabled = false
+    account.credentials.header_overrides = {
+      'user-agent': 'InactiveProvider/1',
+      'x-codex-installation-id': 'inactive-installation'
+    }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    expect(wrapper.get('[data-testid="codex-request-compat-effective"]').text()).not.toContain('InactiveProvider/1')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock.mock.calls[0]?.[1].credentials).toMatchObject({
+      codex_request_compat_enabled: true,
+      header_override_enabled: false,
+      header_overrides: account.credentials.header_overrides
+    })
+    wrapper.unmount()
+  })
+
+  it('still clears enabled headers when the administrator explicitly disables them', async () => {
+    const account = buildAccount()
+    account.credentials.header_override_enabled = true
+    account.credentials.header_overrides = { 'user-agent': 'ActiveProvider/1' }
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="edit-header-override-toggle"]').trigger('click')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const credentials = updateAccountMock.mock.calls[0]?.[1].credentials
+    expect(credentials).not.toHaveProperty('header_override_enabled')
+    expect(credentials).not.toHaveProperty('header_overrides')
+    wrapper.unmount()
+  })
+
+  it('does not persist edits when the dialog is closed and reopened', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="codex-request-compat-user-agent"]').setValue('UnsavedCodex/1')
+    await wrapper.setProps({ show: false })
+    await wrapper.setProps({ show: true })
+    expect(wrapper.get('[data-testid="codex-request-compat-toggle"]').attributes('aria-checked')).toBe('false')
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('blocks an invalid compatibility UA on edit', async () => {
+    const account = buildAccount()
+    updateAccountMock.mockReset().mockResolvedValue(account)
+    const wrapper = mountModal(account)
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="codex-request-compat-user-agent"]').setValue('Bad\nAgent')
+    await wrapper.get('form#edit-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(updateAccountMock).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['openai', 'oauth'],
+    ['anthropic', 'apikey']
+  ])('hides Codex compatibility for %s %s accounts', (platform, type) => {
+    const wrapper = mountModal({ ...buildAccount(), platform, type })
+    expect(wrapper.find('[data-testid="codex-request-compat"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('uses the saved connection until the administrator changes the upstream', async () => {
     const account = buildAccount()
     account.notes = 'local notes'

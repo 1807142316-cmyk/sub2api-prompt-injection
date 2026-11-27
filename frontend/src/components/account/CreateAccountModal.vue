@@ -2007,6 +2007,16 @@
           </div>
         </div>
 
+        <CodexRequestCompatSettings
+          v-if="isCodexRequestCompatCapable(form.platform, 'apikey')"
+          v-model="codexRequestCompat"
+          v-model:passthrough-enabled="openaiPassthroughEnabled"
+          v-model:responses-mode="openAIResponsesMode"
+          :header-override-enabled="headerOverrideEnabled"
+          :header-override-rows="headerOverrideRows"
+          :text-generation-enabled="openAITextGenerationCapabilityEnabled"
+        />
+
         <!-- Header Override Section (eligible API-key platforms) -->
         <div
           v-if="isHeaderOverrideCapable(form.platform, 'apikey')"
@@ -4237,9 +4247,11 @@ import CnBaseUrlPresets from '@/components/account/CnBaseUrlPresets.vue'
 import { applyExplicitCacheUpstreamCredentials, isOfficialGeminiBaseUrl } from '@/utils/geminiExplicitCache'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import CodexRequestCompatSettings from '@/components/account/CodexRequestCompatSettings.vue'
 import { allSelectedGroupsEnableLongContextPricing } from '@/components/account/longContextBilling'
 import {
   applyAntigravityProjectID,
+  applyCodexRequestCompat,
   applyHeaderOverride,
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
@@ -4250,6 +4262,7 @@ import {
   defaultOpenCodeProtocolRules,
   defaultProviderProtocolRules,
   isCNProviderPlatform,
+  isCodexRequestCompatCapable,
   isHeaderOverrideCapable,
   isMultiProtocolApiKeyPlatform,
   providerAccountModes,
@@ -4257,6 +4270,8 @@ import {
   providerNativeProtocols,
   providerRoutesByModel,
   resolveProviderAccountMode,
+  readCodexRequestCompat,
+  validateCodexRequestCompat,
   validateHeaderOverrideRows,
   type CnAccountMode,
   type CnApiProtocol,
@@ -4752,6 +4767,7 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
+const codexRequestCompat = ref(readCodexRequestCompat())
 
 // Grok OAuth：自定义上游地址（base_url 仅改写转发端点，OAuth 授权/刷新不受影响）
 const grokOAuthCustomBaseUrlEnabled = ref(false)
@@ -5321,6 +5337,7 @@ watch(
     // 避免上一平台的配置行被提交到新平台账号
     headerOverrideEnabled.value = false
     headerOverrideRows.value = []
+    codexRequestCompat.value = readCodexRequestCompat()
     openAIImagesUrlToB64JsonEnabled.value = false
     openAIImageSizeTiers.value = [...OPENAI_IMAGE_SIZE_TIERS]
     grokOAuthCustomBaseUrlEnabled.value = false
@@ -5760,6 +5777,7 @@ const resetForm = () => {
   customErrorCodeInput.value = null
   headerOverrideEnabled.value = false
   headerOverrideRows.value = []
+  codexRequestCompat.value = readCodexRequestCompat()
   openAIImagesUrlToB64JsonEnabled.value = false
   openAIImageSizeTiers.value = [...OPENAI_IMAGE_SIZE_TIERS]
   grokOAuthCustomBaseUrlEnabled.value = false
@@ -6302,6 +6320,15 @@ const handleSubmit = async () => {
   if (customErrorCodesEnabled.value) {
     credentials.custom_error_codes_enabled = true
     credentials.custom_error_codes = [...selectedErrorCodes.value]
+  }
+
+  if (isCodexRequestCompatCapable(form.platform, 'apikey')) {
+    const compatError = validateCodexRequestCompat(codexRequestCompat.value)
+    if (compatError) {
+      appStore.showError(t(`admin.accounts.codexRequestCompat.${compatError}`))
+      return
+    }
+    applyCodexRequestCompat(credentials, codexRequestCompat.value)
   }
 
   // Add header override if enabled for this API-key platform

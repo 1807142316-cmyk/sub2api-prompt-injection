@@ -186,6 +186,7 @@ func (a *Account) ApplyHeaderOverrides(ctx context.Context, h http.Header) {
 	if h == nil {
 		return
 	}
+	a.applyCodexRequestCompatibility(h)
 	overrides := a.GetHeaderOverrides()
 	if len(overrides) == 0 {
 		return
@@ -218,8 +219,15 @@ func (a *Account) ApplyHeaderOverrides(ctx context.Context, h http.Header) {
 // 供账号创建/更新/批量更新的保存路径调用；credentials 未携带相关字段时为 no-op。
 // 规范化内容：header 名转小写并去除首尾空白，value 去除首尾空白，丢弃名和值均为空的条目。
 func NormalizeHeaderOverrideCredentials(credentials map[string]any) error {
+	return normalizeHeaderOverrideCredentials(credentials, true)
+}
+
+func normalizeHeaderOverrideCredentials(credentials map[string]any, requireComplete bool) error {
 	if credentials == nil {
 		return nil
+	}
+	if err := normalizeCodexRequestCompatibility(credentials, requireComplete); err != nil {
+		return err
 	}
 	if raw, ok := credentials[credKeyHeaderOverrideEnabled]; ok && raw != nil {
 		if _, isBool := raw.(bool); !isBool {

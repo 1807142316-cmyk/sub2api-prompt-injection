@@ -44,6 +44,18 @@ func TestInstructionLayerAuthenticatedScopeBothWrappers(t *testing.T) {
 					require.Equal(t, int64(42), c.Request.Context().Value(ctxkey.AuthenticatedGroupID))
 					setGroupContext(c, &service.Group{ID: 43, Name: "fallback", Status: service.StatusActive, Hydrated: true, Platform: service.PlatformOpenAI})
 					require.Equal(t, int64(42), c.Request.Context().Value(ctxkey.AuthenticatedGroupID), "routing changes must not change the authenticated injection scope")
+					account := &service.Account{
+						ID: 123, Platform: service.PlatformOpenAI, Type: service.AccountTypeAPIKey,
+						Credentials: map[string]any{
+							"header_override_enabled": true,
+							"header_overrides": map[string]any{
+								"x-authenticated-scope": "{{user_id}}/{{api_key_id}}/{{group_id}}",
+							},
+						},
+					}
+					upstreamHeaders := make(http.Header)
+					account.ApplyHeaderOverrides(c.Request.Context(), upstreamHeaders)
+					require.Equal(t, []string{"7/100/42"}, upstreamHeaders["x-authenticated-scope"], "header variables must retain the same authenticated scope after routing")
 					c.Status(http.StatusOK)
 				})
 				request := httptest.NewRequest(http.MethodPost, "/scope", strings.NewReader(`{"user":"999","api_key_id":888,"group_id":999,"metadata":{"user_id":999,"group_id":999}}`))

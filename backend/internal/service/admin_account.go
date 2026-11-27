@@ -1145,16 +1145,26 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 		}
 	}
 
-	// 校验并规范化请求头覆写配置（批量路径为 JSONB 顶层 key 合并，直接校验增量即可）
-	if err := NormalizeHeaderOverrideCredentials(input.Credentials); err != nil {
+	// Bulk credentials are a JSONB patch; validate cross-field constraints after merging each target.
+	if err := normalizeHeaderOverrideCredentials(input.Credentials, false); err != nil {
 		return nil, err
 	}
+	_, updatesCompatEnabled := input.Credentials[credKeyCodexRequestCompatEnabled]
+	_, updatesCompatUserAgent := input.Credentials[credKeyCodexRequestCompatUserAgent]
 	for _, account := range cachedTargets {
 		if account == nil {
 			continue
 		}
 		if err := ValidateHeaderOverrideVariableUsage(account.Type, input.Credentials); err != nil {
 			return nil, err
+		}
+		if updatesCompatEnabled || updatesCompatUserAgent {
+			merged := make(map[string]any, len(account.Credentials)+len(input.Credentials))
+			maps.Copy(merged, account.Credentials)
+			maps.Copy(merged, input.Credentials)
+			if err := normalizeCodexRequestCompatibility(merged, true); err != nil {
+				return nil, err
+			}
 		}
 	}
 	if err := NormalizeProtocolRulesCredentials(input.Credentials); err != nil {
@@ -1265,7 +1275,7 @@ func (s *adminServiceImpl) BulkUpdateAccounts(ctx context.Context, input *BulkUp
 }
 
 func updatesUpstreamBillingProbeIdentity(credentials map[string]any) bool {
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
+	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides, credKeyCodexRequestCompatEnabled, credKeyCodexRequestCompatUserAgent} {
 		if _, ok := credentials[key]; ok {
 			return true
 		}
@@ -1281,7 +1291,7 @@ func upstreamBillingProbeIdentity(account *Account) map[string]any {
 	if account.ProxyID != nil {
 		identity["proxy_id"] = *account.ProxyID
 	}
-	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides} {
+	for _, key := range []string{"api_key", "base_url", credKeyHeaderOverrideEnabled, credKeyHeaderOverrides, credKeyCodexRequestCompatEnabled, credKeyCodexRequestCompatUserAgent} {
 		if value, ok := account.Credentials[key]; ok {
 			identity[key] = value
 		}

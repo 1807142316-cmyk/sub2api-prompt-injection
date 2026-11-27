@@ -855,6 +855,16 @@
         </div>
       </div>
 
+      <CodexRequestCompatSettings
+        v-if="isCodexRequestCompatCapable(account.platform, account.type)"
+        v-model="codexRequestCompat"
+        v-model:passthrough-enabled="openaiPassthroughEnabled"
+        v-model:responses-mode="openAIResponsesMode"
+        :header-override-enabled="headerOverrideEnabled"
+        :header-override-rows="headerOverrideRows"
+        :text-generation-enabled="openAITextGenerationCapabilityEnabled"
+      />
+
       <!-- Header Override Section (eligible API-key platforms + grok OAuth) -->
       <div v-if="headerOverrideCapable" class="border-t border-gray-200 pt-4 dark:border-dark-600">
         <div class="mb-3 flex items-center justify-between">
@@ -866,6 +876,7 @@
           </div>
           <button
             type="button"
+            data-testid="edit-header-override-toggle"
             @click="headerOverrideEnabled = !headerOverrideEnabled"
             :class="[
               'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2',
@@ -3503,9 +3514,11 @@ import {
 } from '@/utils/geminiExplicitCache'
 import OpenCodeGoProtocolRulesEditor from '@/components/account/OpenCodeGoProtocolRulesEditor.vue'
 import HeaderOverrideEditor from '@/components/account/HeaderOverrideEditor.vue'
+import CodexRequestCompatSettings from '@/components/account/CodexRequestCompatSettings.vue'
 import OllamaCloudUsageSettings from '@/components/account/OllamaCloudUsageSettings.vue'
 import {
   applyAntigravityProjectID,
+  applyCodexRequestCompat,
   applyHeaderOverride,
   applyInterceptWarmup,
   applyOpenCodeGoProtocolRules,
@@ -3524,8 +3537,11 @@ import {
   readPlanType,
   resolveOpenCodeAccountMode,
   isCustomGrokBaseUrl,
+  isCodexRequestCompatCapable,
   isHeaderOverrideCapable,
   splitHeaderOverridesObject,
+  readCodexRequestCompat,
+  validateCodexRequestCompat,
   validateHeaderOverrideRows,
   cnSupportsNativeResponses,
   defaultCNAdaptiveBaseUrls,
@@ -3952,6 +3968,7 @@ const selectedErrorCodes = ref<number[]>([])
 const customErrorCodeInput = ref<number | null>(null)
 const headerOverrideEnabled = ref(false)
 const headerOverrideRows = ref<HeaderOverrideRow[]>([])
+const codexRequestCompat = ref(readCodexRequestCompat())
 
 // 身份上报变量仅 api_key 账号可用：OAuth 订阅上游不能收到网关用户身份
 const headerOverrideAllowVariables = computed(() => props.account?.type === 'apikey')
@@ -4921,6 +4938,9 @@ const syncFormFromAccount = (newAccount: Account | null) => {
   loadAccountSchedulingThresholdOverride(newAccount.platform, credentials)
 
   // Load header override state for eligible account platforms/types
+  codexRequestCompat.value = readCodexRequestCompat(
+    isCodexRequestCompatCapable(newAccount.platform, newAccount.type) ? credentials : undefined
+  )
   headerOverrideEnabled.value = false
   headerOverrideRows.value = []
   if (newAccount.credentials && isHeaderOverrideCapable(newAccount.platform, newAccount.type)) {
@@ -5891,6 +5911,15 @@ const handleSubmit = async () => {
         delete newCredentials.custom_error_codes
       }
 
+      if (isCodexRequestCompatCapable(props.account.platform, props.account.type)) {
+        const compatError = validateCodexRequestCompat(codexRequestCompat.value)
+        if (compatError) {
+          appStore.showError(t(`admin.accounts.codexRequestCompat.${compatError}`))
+          return
+        }
+        applyCodexRequestCompat(newCredentials, codexRequestCompat.value)
+      }
+
       // Add header override if enabled for this API-key platform
       if (isHeaderOverrideCapable(props.account.platform, 'apikey')) {
         if (headerOverrideEnabled.value) {
@@ -5902,7 +5931,12 @@ const handleSubmit = async () => {
             return
           }
         }
-        applyHeaderOverride(newCredentials, headerOverrideEnabled.value, headerOverrideRows.value, 'edit')
+        const keepInactiveOpenAIHeaders = props.account.platform === 'openai' &&
+          !headerOverrideEnabled.value &&
+          currentCredentials[HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY] !== true
+        if (!keepInactiveOpenAIHeaders) {
+          applyHeaderOverride(newCredentials, headerOverrideEnabled.value, headerOverrideRows.value, 'edit')
+        }
       }
 
       // Add intercept warmup requests setting

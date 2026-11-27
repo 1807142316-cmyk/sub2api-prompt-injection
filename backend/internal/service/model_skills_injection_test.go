@@ -113,7 +113,7 @@ func TestModelSkillsCacheAvoidsRepeatedReadsAndInvalidatesAfterWrite(t *testing.
 	require.NoError(t, err)
 	skills, err := json.Marshal([]ModelSkill{{ID: "global", Name: "global", Content: "cached skill"}})
 	require.NoError(t, err)
-	repo := &modelSkillsProbeSettingRepo{values: map[string]string{
+	repo := &customizationBenchmarkSettingRepo{values: map[string]string{
 		SettingKeyGlobalModelSkillRules: string(global),
 		SettingKeyModelSkills:           string(skills),
 	}}
@@ -125,20 +125,25 @@ func TestModelSkillsCacheAvoidsRepeatedReadsAndInvalidatesAfterWrite(t *testing.
 	first, err := settings.ApplyGroupDefaultSkills(context.Background(), group, "responses", "test-model", firstBody)
 	require.NoError(t, err)
 	require.Contains(t, string(first), "cached skill")
-	readsAfterFirst := repo.reads
-	require.Equal(t, 2, readsAfterFirst, "the first request loads each settings document once")
+	require.Equal(t, uint64(1), repo.layerReads.Load())
+	require.Equal(t, uint64(1), repo.ruleReads.Load())
+	require.Equal(t, uint64(1), repo.skillReads.Load())
 
 	second, err := settings.ApplyGroupDefaultSkills(context.Background(), group, "responses", "test-model", secondBody)
 	require.NoError(t, err)
 	require.Contains(t, string(second), "cached skill")
-	require.Equal(t, readsAfterFirst, repo.reads, "subsequent requests should use the in-process cache")
+	require.Equal(t, uint64(2), repo.layerReads.Load(), "instruction layers remain fresh on every request")
+	require.Equal(t, uint64(1), repo.ruleReads.Load(), "Skill rules should use the in-process cache")
+	require.Equal(t, uint64(1), repo.skillReads.Load(), "Skill contents should use the in-process cache")
 
 	_, err = settings.UpdateGlobalModelSkillRules(context.Background(), ModelSkillRuleConfig{})
 	require.NoError(t, err)
 	third, err := settings.ApplyGroupDefaultSkills(context.Background(), group, "responses", "test-model", secondBody)
 	require.NoError(t, err)
 	require.NotContains(t, string(third), "cached skill", "a successful admin write must invalidate the cache immediately")
-	require.Greater(t, repo.reads, readsAfterFirst)
+	require.Equal(t, uint64(3), repo.layerReads.Load())
+	require.Equal(t, uint64(2), repo.ruleReads.Load(), "admin writes must reload the invalidated Skill rules")
+	require.Equal(t, uint64(1), repo.skillReads.Load(), "empty rules should not reload unused Skill contents")
 }
 
 func BenchmarkApplyGroupDefaultSkillsCached(b *testing.B) {

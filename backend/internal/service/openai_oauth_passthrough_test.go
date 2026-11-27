@@ -2603,11 +2603,14 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesCompleteResponsesReques
 		parallel        bool
 		emptyValues     bool
 		headerOverrides bool
+		codexCompat     bool
 	}{
 		{name: "non_stream_false_values"},
 		{name: "stream_true_values", stream: true, store: true, parallel: true},
 		{name: "non_stream_empty_values", emptyValues: true},
 		{name: "stream_header_overrides", stream: true, headerOverrides: true},
+		{name: "stream_codex_compatibility", stream: true, codexCompat: true},
+		{name: "stream_codex_compatibility_with_override", stream: true, codexCompat: true, headerOverrides: true},
 	}
 
 	for _, tt := range tests {
@@ -2720,6 +2723,8 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesCompleteResponsesReques
 						"User-Agent": "fixture-account/2.0",
 						"Version":    "configured-version",
 					},
+					"codex_request_compat_enabled":    tt.codexCompat,
+					"codex_request_compat_user_agent": "fixture-codex/3.0",
 				},
 				Extra: map[string]any{"openai_passthrough": true, "openai_responses_mode": "force_responses"},
 			}
@@ -2747,6 +2752,9 @@ func TestOpenAIGatewayService_APIKeyPassthrough_PreservesCompleteResponsesReques
 				for _, value := range values {
 					upstreamHeaders.Add(key, value)
 				}
+			}
+			if tt.codexCompat {
+				allowedHeaders.Set("User-Agent", "fixture-codex/3.0")
 			}
 			if tt.headerOverrides {
 				allowedHeaders.Set("User-Agent", "fixture-account/2.0")

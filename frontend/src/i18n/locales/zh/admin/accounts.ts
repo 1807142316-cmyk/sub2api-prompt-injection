@@ -1071,6 +1071,22 @@ export default {
       errorCodeExists: '该错误码已被选中',
       interceptWarmupRequests: '拦截预热请求',
       interceptWarmupRequestsDesc: '启用后，标题生成等预热请求将返回 mock 响应，不消耗上游 token',
+      codexRequestCompat: {
+        title: 'Codex 请求兼容',
+        hint: '为本账号设置发送给上游的客户端标识。',
+        userAgent: '客户端标识（User-Agent）',
+        effectiveUserAgent: '生效的 User-Agent 配置',
+        relatedSettings: '相关请求设置',
+        passthrough: '保留原始请求（透传）',
+        userAgentRequired: '启用后需要填写客户端标识。',
+        userAgentInvalid: '客户端标识不能包含换行或控制字符，且不能超过 8192 字节。',
+        userAgentLiteralRequired: '请填写具体的客户端标识，不要使用请求头变量。',
+        source: {
+          compat: '使用上方的客户端标识。',
+          override: '下方「请求头覆写」中的 User-Agent 优先，当前以该值为准。',
+          original: '沿用原有请求设置。'
+        }
+      },
       headerOverride: {
         title: '请求头覆写',
         hint: '转发时用配置值覆盖同名请求头（不区分大小写）',

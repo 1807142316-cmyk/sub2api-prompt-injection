@@ -280,6 +280,51 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     wrapper.unmount()
   })
 
+  it('creates Codex compatibility only after opt-in without enabling passthrough', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    expect(wrapper.find('[data-testid="codex-request-compat"]').exists()).toBe(false)
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Compatible account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('synthetic-key')
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="codex-request-compat-user-agent"]').setValue('CustomCodex/1')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    const payload = createAccountMock.mock.calls[0]?.[0]
+    expect(payload.credentials).toMatchObject({
+      codex_request_compat_enabled: true,
+      codex_request_compat_user_agent: 'CustomCodex/1'
+    })
+    expect(payload.credentials).not.toHaveProperty('header_override_enabled')
+    expect(payload.extra?.openai_passthrough).not.toBe(true)
+    expect(payload.extra?.openai_responses_mode).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('does not add compatibility settings to an untouched new account', async () => {
+    const wrapper = await submitApiKeyAccount('openai')
+    expect(createAccountMock.mock.calls[0]?.[0].credentials).not.toHaveProperty('codex_request_compat_enabled')
+    expect(createAccountMock.mock.calls[0]?.[0].credentials).not.toHaveProperty('codex_request_compat_user_agent')
+    wrapper.unmount()
+  })
+
+  it('blocks creating an enabled compatibility setting with an empty UA', async () => {
+    const wrapper = mountModal()
+    await selectButtonByText(wrapper, 'OpenAI')
+    await selectButtonByText(wrapper, 'API Key')
+    await wrapper.get('form#create-account-form input[type="text"]').setValue('Invalid account')
+    await wrapper.get('form#create-account-form input[type="password"]').setValue('synthetic-key')
+    await wrapper.get('[data-testid="codex-request-compat-toggle"]').trigger('click')
+    await wrapper.get('[data-testid="codex-request-compat-user-agent"]').setValue(' ')
+    await wrapper.get('form#create-account-form').trigger('submit.prevent')
+    await flushPromises()
+    expect(createAccountMock).not.toHaveBeenCalled()
+    expect(wrapper.get('[data-testid="codex-request-compat"] [role="alert"]').text())
+      .toContain('userAgentRequired')
+    wrapper.unmount()
+  })
+
   it('sets month and year expiry presets without submitting the account form', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-01-31T12:34:00'))
@@ -451,6 +496,7 @@ describe('CreateAccountModal OpenAI long-context billing', () => {
     await selectButtonByText(wrapper, 'API Key')
     await wrapper.get('form#create-account-form input[type="text"]').setValue('Mapped account')
     await wrapper.get('form#create-account-form input[type="password"]').setValue('test-api-key')
+    wrapper.getComponent(ModelWhitelistSelectorStub).vm.$emit('update:modelValue', [])
     await selectButtonByText(wrapper, 'admin.accounts.modelMapping')
     await selectButtonByText(wrapper, 'admin.accounts.addMapping')
     await wrapper.get('input[placeholder="admin.accounts.requestModel"]').setValue('public-glm')

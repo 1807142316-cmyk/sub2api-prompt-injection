@@ -171,6 +171,7 @@ issues/
 # Local prompt editing and source preparation
 !docs/prompt-injection.md
 !docs/upstream-sync.md
+!docs/codex-request-compatibility.md
 /_work/
 /source-audit/
 /frontend/vite.config.d.ts

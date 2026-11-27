@@ -4,16 +4,23 @@ This private repository keeps the real upstream Git baseline on `main` and local
 
 - Upstream repository: `https://github.com/codkeep/sub2api`
 - Upstream remote: `upstream` (fetch source only)
-- Baseline tag: `v0.2.37`
-- Annotated tag object: `0d4270049db226d1593dd77795cbcc8c24cecb7d`
-- Baseline commit: `a47e14d7b053cbf714aee8100dc9cb5b9b51a93c`
-- Baseline commit date: `2026-11-24T20:22:23+08:00`
-- Source archive SHA-256: `f86520c9871b7502ee7f9aae55bbfed494d77aaf0f30fa6433dec8d593d5029a`
-- Verified source files: 4,857 files matched the upstream checkout byte for byte.
+- Baseline tag: `v0.2.38`
+- Annotated tag object: `a83a7643259d8aff6ee5430ffefe7b5f493109ea`
+- Baseline commit: `18b25db6eda44fb0dd18c51902a3b74c684b4961`
+- Baseline commit date: `2026-11-27T23:52:54+08:00`
+- Release published: `2026-11-27T16:02:01Z` (November 28 in Asia/Shanghai)
+- Verification: fetched the explicit upstream tag, checked the tag's peeled commit,
+  and fast-forwarded `main` from the previous v0.2.37 baseline. No archive hash or
+  file-count claim from the previous release applies to this baseline.
 
 `main` points to the actual upstream commit, with its original tree and identity. The history reachable from the baseline commit is retained; unrelated upstream branches and tags were not fetched. The upstream `LICENSE`, copyright notices, documentation, build files, package lockfiles, and executable file modes are retained.
 
-The feature branch first preserves the existing task-based Skills routing and instruction-layer functionality, then adds the prompt editor improvements and group-specific controls. These changes are local extensions. The Go module path inherited from upstream remains `github.com/Wei-Shaw/sub2api`.
+The feature branch preserves task-based Skills routing, instruction layers, the
+prompt editor and group-specific controls. It also adds per-account Codex request
+compatibility controls. The v0.2.38 merge retains upstream Skills caching and
+authenticated header variables alongside the local authenticated-group opt-out.
+These changes are local extensions. The Go module path inherited from upstream
+remains `github.com/Wei-Shaw/sub2api`.
 
 See [the branch and upstream maintenance guide](docs/upstream-sync.md) for the update procedure. Synchronizing source branches does not deploy a running service.
 

@@ -105,12 +105,39 @@ function moveMatch(direction: number): void {
   const offset = matches.value[next]
   textarea.focus()
   textarea.setSelectionRange(offset, offset + search.value.length)
-  const precedingLines = props.modelValue.slice(0, offset).split('\n')
+  scrollMatchIntoView(textarea, offset, search.value.length)
+}
+function scrollMatchIntoView(textarea: HTMLTextAreaElement, offset: number, length: number): void {
+  // Measure actual wrapping so Unicode text and narrow viewports scroll to the selected line.
   const style = getComputedStyle(textarea)
-  const lineHeight = Number.parseFloat(style.lineHeight) || 24
-  const approximateColumns = Math.max(20, Math.floor(textarea.clientWidth / 8))
-  const visualLines = precedingLines.reduce((total, line) => total + Math.max(1, Math.ceil(line.length / approximateColumns)), 0) - 1
-  textarea.scrollTop = Math.max(0, visualLines * lineHeight - textarea.clientHeight / 3)
+  const mirror = document.createElement('div')
+  for (const property of [
+    'font-family', 'font-size', 'font-weight', 'font-style', 'font-variant', 'font-stretch',
+    'font-feature-settings', 'font-variation-settings', 'font-kerning', 'letter-spacing',
+    'line-height', 'text-align', 'text-indent', 'text-transform', 'direction', 'tab-size',
+    'padding-top', 'padding-right', 'padding-bottom', 'padding-left', 'word-break', 'overflow-wrap'
+  ]) {
+    mirror.style.setProperty(property, style.getPropertyValue(property))
+  }
+  Object.assign(mirror.style, {
+    position: 'fixed', top: '0', left: '0', visibility: 'hidden', pointerEvents: 'none',
+    boxSizing: 'border-box', width: `${textarea.clientWidth}px`,
+    whiteSpace: textarea.wrap === 'off' ? 'pre' : 'pre-wrap'
+  })
+  mirror.setAttribute('aria-hidden', 'true')
+  const match = document.createElement('span')
+  match.textContent = textarea.value.slice(offset, offset + length)
+  mirror.append(document.createTextNode(textarea.value.slice(0, offset)), match,
+    document.createTextNode(textarea.value.slice(offset + length)))
+  document.body.append(mirror)
+  try {
+    const rect = match.getClientRects()[0] ?? match.getBoundingClientRect()
+    const bounds = mirror.getBoundingClientRect()
+    textarea.scrollTop = Math.max(0, rect.top - bounds.top - textarea.clientHeight / 3)
+    textarea.scrollLeft = Math.max(0, rect.left - bounds.left - textarea.clientWidth / 3)
+  } finally {
+    mirror.remove()
+  }
 }
 </script>
 

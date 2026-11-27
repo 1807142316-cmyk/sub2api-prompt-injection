@@ -110,6 +110,85 @@ function utf8ByteLength(value: string): number {
   return HEADER_TEXT_ENCODER.encode(value).length
 }
 
+export const CODEX_REQUEST_COMPAT_ENABLED_KEY = 'codex_request_compat_enabled'
+export const CODEX_REQUEST_COMPAT_USER_AGENT_KEY = 'codex_request_compat_user_agent'
+export const DEFAULT_CODEX_REQUEST_USER_AGENT =
+  'codex_exec/0.155.0-alpha.9.2 (Windows 10.0.19045; x86_64) dumb (codex_exec; 0.155.0-alpha.9.2)'
+
+export interface CodexRequestCompatDraft {
+  enabled: boolean
+  userAgent: string
+  configured: boolean
+}
+
+export function isCodexRequestCompatCapable(platform: string, type: string): boolean {
+  return platform === 'openai' && type === 'apikey'
+}
+
+function isValidCodexUserAgent(value: string): boolean {
+  return !HEADER_VALUE_INVALID_PATTERN.test(value) &&
+    utf8ByteLength(value) <= HEADER_OVERRIDE_MAX_VALUE_LENGTH &&
+    !value.includes('{{')
+}
+
+export function readCodexRequestCompat(
+  credentials: Record<string, unknown> = {}
+): CodexRequestCompatDraft {
+  const saved = credentials[CODEX_REQUEST_COMPAT_USER_AGENT_KEY]
+  const override = credentials[HEADER_OVERRIDE_ENABLED_CREDENTIAL_KEY] === true
+    ? splitHeaderOverridesObject(credentials[HEADER_OVERRIDES_CREDENTIAL_KEY])
+      .find((row) => row.name.trim().toLowerCase() === 'user-agent')?.value.trim()
+    : undefined
+  const legacy = typeof credentials.user_agent === 'string' ? credentials.user_agent.trim() : ''
+  return {
+    enabled: credentials[CODEX_REQUEST_COMPAT_ENABLED_KEY] === true,
+    userAgent: typeof saved === 'string'
+      ? saved
+      : override && isValidCodexUserAgent(override)
+        ? override
+        : legacy && isValidCodexUserAgent(legacy)
+          ? legacy
+          : DEFAULT_CODEX_REQUEST_USER_AGENT,
+    configured: Object.prototype.hasOwnProperty.call(credentials, CODEX_REQUEST_COMPAT_ENABLED_KEY) ||
+      Object.prototype.hasOwnProperty.call(credentials, CODEX_REQUEST_COMPAT_USER_AGENT_KEY)
+  }
+}
+
+export function validateCodexRequestCompat(
+  draft: CodexRequestCompatDraft
+): 'userAgentRequired' | 'userAgentInvalid' | 'userAgentLiteralRequired' | null {
+  if (!draft.configured) return null
+  const value = draft.userAgent.trim()
+  if (draft.enabled && !value) return 'userAgentRequired'
+  if (value.includes('{{')) return 'userAgentLiteralRequired'
+  return isValidCodexUserAgent(value) ? null : 'userAgentInvalid'
+}
+
+export function applyCodexRequestCompat(
+  credentials: Record<string, unknown>,
+  draft: CodexRequestCompatDraft
+): void {
+  if (!draft.configured) return
+  credentials[CODEX_REQUEST_COMPAT_ENABLED_KEY] = draft.enabled
+  credentials[CODEX_REQUEST_COMPAT_USER_AGENT_KEY] = draft.userAgent.trim()
+}
+
+export function resolveCodexRequestUserAgent(
+  draft: CodexRequestCompatDraft,
+  headerOverrideEnabled: boolean,
+  rows: HeaderOverrideRow[]
+): { source: 'override' | 'compat' | 'original'; value: string } {
+  const override = headerOverrideEnabled
+    ? rows.find((row) => row.name.trim().toLowerCase() === 'user-agent')
+    : undefined
+  if (override?.value.trim()) {
+    return { source: 'override', value: override.value.trim() }
+  }
+  return draft.enabled
+    ? { source: 'compat', value: draft.userAgent.trim() }
+    : { source: 'original', value: '' }
+}
+
 // ---------- 请求头覆写变量（与后端 account_header_override_vars.go 保持一致） ----------
 
 /** 可用变量名：转发时替换为本次请求的网关身份，仅 api_key 账号解析 */
