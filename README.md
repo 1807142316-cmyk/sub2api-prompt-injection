@@ -18,7 +18,7 @@ English | [中文](README_CN.md) | [日本語](README_JA.md)
 
 </div>
 
-[本地提示词注入功能说明](docs/prompt-injection.md) · [上游来源](UPSTREAM_SOURCE.md)
+[本地提示词注入功能说明](docs/prompt-injection.md) · [分支与上游同步](docs/upstream-sync.md) · [上游来源](UPSTREAM_SOURCE.md)
 
 ## ⚠️ Important Notice
 
